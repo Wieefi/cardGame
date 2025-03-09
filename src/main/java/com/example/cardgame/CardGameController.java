@@ -213,7 +213,7 @@ public class CardGameController {
 
     /**
      * This is the recursive helper method that tries all combinations of operations
-     * It returns a valid expression that evaluates to 24 or null if none is found
+     * It returns a valid expression that evaluates to 24 or null if none is found.
      */
     private String solveHelper(List<Double> nums,List<String> exprs){
         if(nums.size()==1){
