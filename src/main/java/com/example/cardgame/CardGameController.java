@@ -1,18 +1,25 @@
 package com.example.cardgame;
 
+import javafx.animation.PauseTransition;
+import javafx.animation.TranslateTransition;
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.Pane;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Circle;
+import javafx.util.Duration;
+
+import javax.print.attribute.standard.Media;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
 
 /**
@@ -31,11 +38,17 @@ public class CardGameController {
     @FXML
     private TextField expressionField;
     @FXML
+    private VBox Main_vbox;
+    @FXML
+    private StackPane rootPane;
+    @FXML
     private TextField hintField;
     private int[] cardValues = new int[4];
     private Random random = new Random();
     private final String[] suits = {"clubs", "diamonds", "hearts", "spades"};
 
+    private String cachedSolution = null;
+    private boolean partialShown = false;
     /**
      * This method initializes the controller
      * It generates random cards for display
@@ -71,14 +84,14 @@ public class CardGameController {
                     valueString=String.valueOf(cardValues[i]);
                     break;
             }
-            String fileName=valueString+"_of_"+suit+".png";
-            InputStream is=getClass().getResourceAsStream("/images/png/"+fileName);
-            if (is==null){
+            String fileName = valueString+"_of_"+suit+".png";
+            InputStream is = getClass().getResourceAsStream("/images/png/"+fileName);
+            if(is==null){
                 System.err.println("Could not load image: "+fileName);
                 continue;
             }
-            Image image=new Image(is);
-            switch (i){
+            Image image = new Image(is);
+            switch(i){
                 case 0:
                     cardImage1.setImage(image);
                     break;
@@ -93,6 +106,10 @@ public class CardGameController {
                     break;
             }
         }
+        cachedSolution = null;
+        partialShown = false;
+        hintField.clear();
+        expressionField.clear();
     }
 
     /**
@@ -116,14 +133,45 @@ public class CardGameController {
             Object result=engine.eval(expr);
             double value=Double.parseDouble(result.toString());
             if(Math.abs(value-24)<0.0001){
+                playConfettiAnimation();
                 showAlert(Alert.AlertType.INFORMATION,"YESS!","Nice job! Your expression evaluates to 24 :D");
             }else{
-                showAlert(Alert.AlertType.ERROR,"WRONG!!","Your expression does not evaluate to 24. It evaluates to: "+value+">:( try again.");
+                showAlert(Alert.AlertType.ERROR,"WRONG!!","Your expression does not evaluate to 24. It evaluates to: "+value+" >:( try again.");
             }
         }catch(ScriptException e){
             showAlert(Alert.AlertType.ERROR,"Error","Invalid expression. Please enter a VALID arithmetic expression >:(");
         }
     }
+
+    /**
+     * Plays a confetti animation over the whole scene
+     * It creates a confetti pane & adds it to the root stackpane of the scene
+     * It then creates 100 confetti circles with random sizes & colors that drop from the top with random trajectories
+     * When each confetti finishes its drop it is removed from the confetti pane
+     */
+    private void playConfettiAnimation(){
+        StackPane root = (StackPane) Main_vbox.getScene().getRoot();
+        Pane confettiPane = new Pane();
+        confettiPane.setPickOnBounds(false);
+        root.getChildren().add(confettiPane);
+        for(int i=0;i<100;i++){
+            Circle confetti = new Circle(5+random.nextDouble()*5);
+            confetti.setFill(Color.rgb(random.nextInt(256),random.nextInt(256),random.nextInt(256)));
+            confetti.setLayoutX(random.nextDouble()*root.getWidth());
+            confetti.setLayoutY(-20);
+            confettiPane.getChildren().add(confetti);
+            TranslateTransition tt = new TranslateTransition(Duration.seconds(3+random.nextDouble()*2),confetti);
+            tt.setByY(root.getHeight()+40);
+            tt.setByX(random.nextDouble()*100-50);
+            tt.setCycleCount(1);
+            tt.setOnFinished(e -> confettiPane.getChildren().remove(confetti));
+            tt.play();
+        }
+        PauseTransition pt = new PauseTransition(Duration.seconds(5));
+        pt.setOnFinished(e -> root.getChildren().remove(confettiPane));
+        pt.play();
+    }
+
 
     /**
      * This method handles refreshing of the game
@@ -236,46 +284,50 @@ public class CardGameController {
 
     /**
      * This method returns a partial solution string as a hint
-     * It reveals the given fraction of tokens from the full solution
+     * It reveals only the first half of the solution string
      */
-    private String getPartialSolution(String solution,double ratio){
-        if(solution==null||solution.isEmpty()||solution.equals("No solution found")){
+    private String getPartialSolution(String solution){
+        if(solution==null||solution.isEmpty()||solution.equals("Cannot find Solution :(")){
             return "No solution available.";
         }
-        String[] tokens=solution.split(" ");
-        int tokensToReveal=(int)Math.ceil(tokens.length*ratio);
-        StringBuilder sb=new StringBuilder();
-        for(int i=0;i<tokensToReveal;i++){
-            sb.append(tokens[i]).append(" ");
-        }
-        return sb.toString().trim()+" ...";
+        int half = solution.length()/2;
+        return solution.substring(0,half).trim()+" ...";
     }
+
     /**
      * This method handles the hint button action
-     * It solves the 24 game for the current cards & displays a partial solution as a hint
+     * On the first press it shows a partial solution & on a second press it shows the full solution
      */
     @FXML
     private void handleHintButton(){
-        String fullSolution=solve24(cardValues);
+        String fullSolution = solve24(cardValues);
         if(fullSolution.startsWith("Cannot")){
             hintField.setText(getHint());
-        }else{
-            String partialSolution=getPartialSolution(fullSolution,0.75);
-            hintField.setText(partialSolution);
+            return;
+        }
+        if(!partialShown){
+            String partial = getPartialSolution(fullSolution);
+            hintField.setText(partial);
+            partialShown = true;
+            cachedSolution = fullSolution;
+        } else{
+            hintField.setText(cachedSolution);
+            partialShown = false;
         }
     }
+
     /**
      * This method returns a generic hint based on the current card values
      * It suggests a pairing strategy if a solution cannot be found
      */
     private String getHint(){
-        int sum=cardValues[0]+cardValues[1]+cardValues[2]+cardValues[3];
+        int sum = cardValues[0]+cardValues[1]+cardValues[2]+cardValues[3];
         if(sum==24){
             return "Hint: Try simply adding all the cards together.";
         }
-        int[] sorted=cardValues.clone();
+        int[] sorted = cardValues.clone();
         Arrays.sort(sorted);
-        return "Try smashing "+sorted[0]+" with "+sorted[3]+", and "+sorted[1]+" with "+sorted[2]+", and combining what's left... :3";
+        return "Hint: Consider pairing "+sorted[0]+" (the smallest) & "+sorted[3]+" (the largest) & "+sorted[1]+" & "+sorted[2]+" then combine the results.";
     }
 }
 
